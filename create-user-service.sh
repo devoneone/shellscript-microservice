@@ -23,6 +23,96 @@ read -p "Enter the group (e.g., com.example or co.name): " group
 # Prompt for server port
 read -p "Enter the server port (e.g., 8081): " server_port
 
+# Prompt for Config Server port 
+read -p "Enter the config server port: " config_server_port
+
+# Prompt for Eureka server port 
+read -p "Enter the Eureka server port: " eureka_port
+
+# Initialize dependencies variable
+dependencies="implementation 'org.springframework.boot:spring-boot-starter-web'"
+db_dependencies=""
+security_dependencies=""
+
+# Function to prompt for and select dependencies
+select_dependencies() {
+    echo "Select additional dependencies (enter the number, or 'q' to quit):"
+    echo "1. Database"
+    echo "2. Lombok"
+    echo "3. Security"
+    echo "q. Quit"
+
+    read -p "Enter your choice: " choice
+
+    case $choice in
+        1)
+            echo "Select the database type:"
+            echo "1. PostgreSQL"
+            echo "2. MongoDB"
+            echo "3. Spring Data JPA (no specific database)"
+            read -p "Enter your choice: " db_choice
+
+            case $db_choice in
+                1)
+                    db_dependencies="implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+                    implementation 'org.postgresql:postgresql'"
+                    ;;
+                2)
+                    db_dependencies="implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'"
+                    ;;
+                3)
+                    db_dependencies="implementation 'org.springframework.boot:spring-boot-starter-data-jpa'"
+                    ;;
+                *)
+                    echo "Invalid choice for database."
+                    ;;
+            esac
+            ;;
+        2)
+            dependencies="${dependencies}
+            implementation 'org.projectlombok:lombok'
+            annotationProcessor 'org.projectlombok:lombok'"
+            ;;
+        3)
+            echo "Select security dependencies:"
+            echo "1. Spring Security"
+            echo "2. OAuth2 Client"
+            echo "3. OAuth2 Resource Server"
+            echo "4. OAuth2 Authorization Server"
+            read -p "Enter your choice: " sec_choice
+
+            case $sec_choice in
+                1)
+                    security_dependencies="implementation 'org.springframework.boot:spring-boot-starter-security'"
+                    ;;
+                2)
+                    security_dependencies="implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'"
+                    ;;
+                3)
+                    security_dependencies="implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'"
+                    ;;
+                4)
+                    security_dependencies="implementation 'org.springframework.security:spring-security-oauth2-authorization-server:0.4.0'"
+                    ;;
+                *)
+                    echo "Invalid choice for security."
+                    ;;
+            esac
+            ;;
+        q)
+            return
+            ;;
+        *)
+            echo "Invalid choice."
+            ;;
+    esac
+
+    select_dependencies
+}
+
+# Prompt for dependencies
+select_dependencies
+
 # Convert dots in group to slashes for directory structure
 package_path=$(echo "$group" | tr '.' '/')
 
@@ -31,6 +121,8 @@ create_project() {
     local project_name=$1
     local main_class=$2
     local dependencies=$3
+    local db_dependencies=$4
+    local security_dependencies=$5
 
     mkdir -p "spring-micro-service/${project_name}"
     cd "spring-micro-service/${project_name}"
@@ -57,6 +149,8 @@ ext {
 
 dependencies {
     ${dependencies}
+    ${db_dependencies}
+    ${security_dependencies}
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
@@ -97,11 +191,7 @@ EOF
 mkdir -p spring-micro-service
 
 # Create User Service
-create_project "${project_name}" "${main_class}" "implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
-    implementation 'org.springframework.cloud:spring-cloud-starter-config'
-    implementation 'org.postgresql:postgresql'"
+create_project "${project_name}" "${main_class}" "${dependencies}" "${db_dependencies}" "${security_dependencies}""implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'""implementation 'org.springframework.cloud:spring-cloud-starter-config'"
 
 # Configure User Service
 cat << EOF > spring-micro-service/${project_name}/src/main/resources/application.yml
@@ -112,7 +202,7 @@ spring:
   application:
     name: ${project_name}
   config:
-    import: optional:configserver:http://localhost:8888
+    import: optional:configserver:http://localhost:${config_server_port}
   datasource:
     url: jdbc:postgresql://localhost:5432/userdb
     username: admin
@@ -125,73 +215,8 @@ spring:
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://localhost:${eureka_port}/eureka/
 EOF
 
-# Add User entity and repository to User Service
-cat << EOF > spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/User.java
-package ${group}.${project_name//-/};
-
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-
-@Entity
-@Table(name = "users")
-public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    private String name;
-    private String email;
-
-    // Getters and setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
-}
-EOF
-
-cat << EOF > spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/UserRepository.java
-package ${group}.${project_name//-/};
-
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface UserRepository extends JpaRepository<User, Long> {
-}
-EOF
-
-# Add a controller to User Service
-cat << EOF > spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/UserController.java
-package ${group}.${project_name//-/};
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-import java.util.List;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @PostMapping
-    public User createUser(@RequestBody User user) {
-        return userRepository.save(user);
-    }
-
-    @GetMapping
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
-    }
-}
-EOF
-
-echo "User Service project has been created and configured successfully."
+echo "${project_name} project has been created and configured successfully."
 
