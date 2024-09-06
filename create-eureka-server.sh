@@ -75,8 +75,10 @@ package ${group}.${project_name//-/};
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;
 
 @SpringBootApplication
+@EnableEurekaServer
 public class ${main_class} {
     public static void main(String[] args) {
         SpringApplication.run(${main_class}.class, args);
@@ -125,12 +127,44 @@ management:
         include: '*'
 EOF
 
-# Update main application class
+# Create Dockerfile for the Eureka Server project
+cat << EOF > spring-micro-service/${project_name}/Dockerfile
+# Use official OpenJDK image as the base image
+FROM openjdk:17-jdk-alpine
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the build.gradle and gradle wrapper files to the container
+COPY build.gradle .
+COPY gradlew .
+COPY gradle ./gradle
+
+# Copy the source code to the container
+COPY src ./src
+
+# Copy other necessary files
+COPY settings.gradle .
+
+# Download the necessary dependencies for the project
+RUN ./gradlew build --no-daemon
+
+# Copy the JAR file into the container
+COPY build/libs/*.jar app.jar
+
+# Expose the port that the application will run on
+EXPOSE 8761
+
+# Run the Spring Boot application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+
+# Update main application class to include the @EnableEurekaServer annotation
 sed -i.bak '/@SpringBootApplication/a\
 import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;\
 \
 @EnableEurekaServer' spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/${main_class}.java
 rm spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/${main_class}.java.bak
 
-echo "Eureka Server project has been created and configured successfully."
+echo "Eureka Server project and Dockerfile have been created and configured successfully."
 

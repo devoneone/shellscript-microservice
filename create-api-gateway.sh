@@ -121,5 +121,37 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
 EOF
 
-echo "API Gateway project has been created and configured successfully."
+# Create Dockerfile for the API Gateway project
+cat << EOF > spring-micro-service/${project_name}/Dockerfile
+# Use official OpenJDK image as the base image
+FROM openjdk:17-jdk-alpine
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the build.gradle and gradle wrapper files to the container
+COPY build.gradle .
+COPY gradlew .
+COPY gradle ./gradle
+
+# Copy the source code to the container
+COPY src ./src
+
+# Copy other necessary files
+COPY settings.gradle .
+
+# Download the necessary dependencies for the project
+RUN ./gradlew build --no-daemon
+
+# Copy the JAR file into the container
+COPY build/libs/*.jar app.jar
+
+# Expose the port that the application will run on
+EXPOSE 8080
+
+# Run the Spring Boot application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+
+echo "API Gateway project and Dockerfile have been created and configured successfully."
 

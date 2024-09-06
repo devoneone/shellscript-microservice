@@ -23,11 +23,6 @@ read -p "Enter the group (e.g., com.example or co.name): " group
 # Prompt for server port
 read -p "Enter the server port (e.g., 8081): " server_port
 
-# Prompt for Config Server port 
-read -p "Enter the config server port: " config_server_port
-
-# Prompt for Eureka server port 
-read -p "Enter the Eureka server port: " eureka_port
 
 # Initialize dependencies variable
 dependencies="implementation 'org.springframework.boot:spring-boot-starter-web'"
@@ -190,11 +185,67 @@ EOF
 # Create spring-micro-service folder if it doesn't exist
 mkdir -p spring-micro-service
 
+# Check if the config-file folder exists in the spring-micro-service folder, if not create it
+if [ ! -d "spring-micro-service/config-file" ]; then
+    mkdir spring-micro-service/config-file
+fi
+
+# Create project-specific folder inside config-file
+mkdir -p "spring-micro-service/config-file/${project_name}"
+
 # Create User Service
 create_project "${project_name}" "${main_class}" "${dependencies}" "${db_dependencies}" "${security_dependencies}""implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'""implementation 'org.springframework.cloud:spring-cloud-starter-config'"
 
-# Configure User Service
-cat << EOF > spring-micro-service/${project_name}/src/main/resources/application.yml
+# Configure User Service for the different environments
+cat << EOF > spring-micro-service/config-file/${project_name}/${project_name}-dev.yml
+server:
+  port: ${server_port}
+
+spring:
+  application:
+    name: ${project_name}-dev
+  config:
+    import: optional:configserver:http://localhost:8888
+  datasource:
+    url: jdbc:postgresql://localhost:5432/userdb-dev
+    username: devuser
+    password: devpassword
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+EOF
+
+cat << EOF > spring-micro-service/config-file/${project_name}/${project_name}-prod.yml
+server:
+  port: ${server_port}
+
+spring:
+  application:
+    name: ${project_name}-prod
+  config:
+    import: optional:configserver:http://localhost:8888
+  datasource:
+    url: jdbc:postgresql://prod-db-host:5432/userdb-prod
+    username: produser
+    password: prodpassword
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+EOF
+
+cat << EOF > spring-micro-service/config-file/${project_name}/${project_name}.yml
 server:
   port: ${server_port}
 
@@ -202,7 +253,7 @@ spring:
   application:
     name: ${project_name}
   config:
-    import: optional:configserver:http://localhost:${config_server_port}
+    import: optional:configserver:http://localhost:8888
   datasource:
     url: jdbc:postgresql://localhost:5432/userdb
     username: admin
@@ -215,8 +266,39 @@ spring:
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:${eureka_port}/eureka/
+      defaultZone: http://localhost:8761/eureka/
 EOF
 
-echo "${project_name} project has been created and configured successfully."
+cat << EOF > spring-micro-service/${project_name}/Dockerfile
+# Use official OpenJDK image as the base image
+FROM openjdk:17-jdk-alpine
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the build.gradle and gradle wrapper files to the container
+COPY build.gradle .
+COPY gradlew .
+COPY gradle ./gradle
+
+# Copy the source code to the container
+COPY src ./src
+
+# Copy other necessary files
+COPY settings.gradle .
+
+# Build the project
+RUN ./gradlew build --no-daemon
+
+# Copy the JAR file into the container
+COPY build/libs/*.jar app.jar
+
+# Expose the port that the application will run on
+EXPOSE ${server_port}
+
+# Run the Spring Boot application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+
+echo "${project_name} project and config files have been created and configured successfully."
 
