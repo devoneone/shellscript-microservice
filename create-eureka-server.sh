@@ -13,8 +13,10 @@ if ! command_exists gradle; then
     exit 1
 fi
 
-# Prompt for project name
-read -p "Enter the project name: " project_name
+# Prompt for project name and set a default if none is provided
+read -p "Enter the project name (default: eureka-server): " project_name
+project_name=${project_name:-eureka-server}  # Default to 'eureka-server' if no input is given
+project_name_lower=$(echo "$project_name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
 main_class="${project_name^}Application"  # Capitalize first letter for the main class name
 
 # Prompt for group (package structure)
@@ -25,12 +27,12 @@ package_path=$(echo "$group" | tr '.' '/')
 
 # Create project structure
 create_project() {
-    local project_name=$1
+    local project_name_lower=$1
     local main_class=$2
     local dependencies=$3
 
-    mkdir -p "spring-micro-service/${project_name}"
-    cd "spring-micro-service/${project_name}"
+    mkdir -p "spring-micro-service/${project_name_lower}"
+    cd "spring-micro-service/${project_name_lower}"
 
     # Create build.gradle
     cat << EOF > build.gradle
@@ -69,9 +71,9 @@ tasks.named('test') {
 EOF
 
     # Create main application class
-    mkdir -p src/main/java/${package_path}/${project_name//-/}
-    cat << EOF > src/main/java/${package_path}/${project_name//-/}/${main_class}.java
-package ${group}.${project_name//-/};
+    mkdir -p src/main/java/${package_path}/${project_name_lower//-/}
+    cat << EOF > src/main/java/${package_path}/${project_name_lower//-/}/${main_class}.java
+package ${group}.${project_name_lower//-/};
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -96,13 +98,13 @@ EOF
 mkdir -p spring-micro-service
 
 # Create Eureka Server
-create_project "${project_name}" "${main_class}" "implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-server'"
+create_project "${project_name_lower}" "${main_class}" "implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-server'"
 
 # Configure Eureka Server
-cat << EOF > spring-micro-service/${project_name}/src/main/resources/application.yml
+cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application.yml
 spring:
   application:
-    name: ${project_name}
+    name: ${project_name_lower}
   profiles:
     active: dev
 server:
@@ -128,7 +130,7 @@ management:
 EOF
 
 # Create Dockerfile for the Eureka Server project
-cat << EOF > spring-micro-service/${project_name}/Dockerfile
+cat << EOF > spring-micro-service/${project_name_lower}/Dockerfile
 # Use official OpenJDK image as the base image
 FROM openjdk:17-jdk-alpine
 
@@ -160,11 +162,10 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 EOF
 
 # Update main application class to include the @EnableEurekaServer annotation
-sed -i.bak '/@SpringBootApplication/a\
+sed -i '/@SpringBootApplication/a\
 import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;\
 \
-@EnableEurekaServer' spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/${main_class}.java
-rm spring-micro-service/${project_name}/src/main/java/${package_path}/${project_name//-/}/${main_class}.java.bak
+@EnableEurekaServer' spring-micro-service/${project_name_lower}/src/main/java/${package_path}/${project_name_lower//-/}/${main_class}.java
 
 echo "Eureka Server project and Dockerfile have been created and configured successfully."
 

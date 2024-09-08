@@ -13,8 +13,9 @@ if ! command_exists gradle; then
     exit 1
 fi
 
-# Prompt for project name
-read -p "Enter the project name (e.g., user-service): " project_name
+# Prompt for project name and convert it to lowercase with hyphens
+read -p "Enter the project name (e.g., ProductService): " project_name
+project_name_lower=$(echo "$project_name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
 main_class="${project_name^}Application"  # Capitalize first letter for the main class name
 
 # Prompt for group (package structure)
@@ -22,7 +23,6 @@ read -p "Enter the group (e.g., com.example or co.name): " group
 
 # Prompt for server port
 read -p "Enter the server port (e.g., 8081): " server_port
-
 
 # Initialize dependencies variable
 dependencies="implementation 'org.springframework.boot:spring-boot-starter-web'"
@@ -111,7 +111,7 @@ select_dependencies
 # Convert dots in group to slashes for directory structure
 package_path=$(echo "$group" | tr '.' '/')
 
-# Create project structure for User Service
+# Create project structure for the microservice
 create_project() {
     local project_name=$1
     local main_class=$2
@@ -119,8 +119,8 @@ create_project() {
     local db_dependencies=$4
     local security_dependencies=$5
 
-    mkdir -p "spring-micro-service/${project_name}"
-    cd "spring-micro-service/${project_name}"
+    mkdir -p "spring-micro-service/${project_name_lower}"
+    cd "spring-micro-service/${project_name_lower}"
 
     # Create build.gradle
     cat << EOF > build.gradle
@@ -161,9 +161,9 @@ tasks.named('test') {
 EOF
 
     # Create main application class
-    mkdir -p src/main/java/${package_path}/${project_name//-/}
-    cat << EOF > src/main/java/${package_path}/${project_name//-/}/${main_class}.java
-package ${group}.${project_name//-/};
+    mkdir -p src/main/java/${package_path}/${project_name_lower//-/}
+    cat << EOF > src/main/java/${package_path}/${project_name_lower//-/}/${main_class}.java
+package ${group}.${project_name_lower//-/};
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -177,99 +177,106 @@ public class ${main_class} {
 EOF
 
     mkdir -p src/main/resources
-    touch src/main/resources/application.yml
-
     cd ../..
 }
 
 # Create spring-micro-service folder if it doesn't exist
 mkdir -p spring-micro-service
 
-# Check if the config-file folder exists in the spring-micro-service folder, if not create it
-if [ ! -d "spring-micro-service/config-file" ]; then
-    mkdir spring-micro-service/config-file
+# Check if the server-config folder exists in the spring-micro-service folder, if not create it
+if [ ! -d "spring-micro-service/server-config" ]; then
+    mkdir spring-micro-service/server-config
 fi
 
-# Create project-specific folder inside config-file
-mkdir -p "spring-micro-service/config-file/${project_name}"
+# Create project-specific folder inside server-config
+mkdir -p "spring-micro-service/server-config/${project_name_lower}"
 
-# Create User Service
-create_project "${project_name}" "${main_class}" "${dependencies}" "${db_dependencies}" "${security_dependencies}""implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'""implementation 'org.springframework.cloud:spring-cloud-starter-config'"
+# Create project files
+create_project "${project_name_lower}" "${main_class}" "${dependencies}" "${db_dependencies}" "${security_dependencies}"
 
-# Configure User Service for the different environments
-cat << EOF > spring-micro-service/config-file/${project_name}/${project_name}-dev.yml
-server:
-  port: ${server_port}
-
+# Add the requested configuration to application.yml
+cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application.yml
 spring:
   application:
-    name: ${project_name}-dev
+    name: ${project_name_lower}
+  profiles:
+    active: dev  # Default active profile
   config:
-    import: optional:configserver:http://localhost:8888
-  datasource:
-    url: jdbc:postgresql://localhost:5432/userdb-dev
-    username: devuser
-    password: devpassword
+    import: optional:configserver:\${CONFIG_SERVER_URL:http://config-server:8888}
   jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+
+server:
+  port: \${SERVER_PORT:8081}
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: \${EUREKA_SERVER_URL:http://eureka-server:8761/eureka}
+EOF
+
+cat << EOF > spring-micro-service/server-config/${project_name_lower}/${project_name_lower}-dev.yml
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/userdb
+    username: admin
+    password: admin@123
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
-
+server:
+  port: ${server_port}
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://eureka-server:8761/eureka
+user:
+  test:
+    property: dev-value
 EOF
 
-cat << EOF > spring-micro-service/config-file/${project_name}/${project_name}-prod.yml
-server:
-  port: ${server_port}
-
+cat << EOF > spring-micro-service/server-config/${project_name_lower}/${project_name_lower}-prod.yml
 spring:
-  application:
-    name: ${project_name}-prod
   config:
-    import: optional:configserver:http://localhost:8888
+    activate:
+      on-profile: prod
   datasource:
-    url: jdbc:postgresql://prod-db-host:5432/userdb-prod
-    username: produser
-    password: prodpassword
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-
-eureka:
-  client:
-    serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
-EOF
-
-cat << EOF > spring-micro-service/config-file/${project_name}/${project_name}.yml
-server:
-  port: ${server_port}
-
-spring:
-  application:
-    name: ${project_name}
-  config:
-    import: optional:configserver:http://localhost:8888
-  datasource:
-    url: jdbc:postgresql://localhost:5432/userdb
+    url: jdbc:postgresql://postgres:5432/postgres
     username: admin
     password: admin@123
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
-
+      ddl-auto: validate
+server:
+  port: ${server_port}
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://eureka-server:8761/eureka/
+user:
+  test:
+    property: prod-value
 EOF
 
-cat << EOF > spring-micro-service/${project_name}/Dockerfile
+cat << EOF > spring-micro-service/server-config/${project_name_lower}/${project_name_lower}.yml
+spring:
+  application:
+    name: ${project_name_lower}
+  jpa:
+    database: POSTGRESQL
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+user:
+  test:
+    property: initial-value
+EOF
+
+cat << EOF > spring-micro-service/${project_name_lower}/Dockerfile
 # Use official OpenJDK image as the base image
 FROM openjdk:17-jdk-alpine
 
@@ -300,5 +307,5 @@ EXPOSE ${server_port}
 ENTRYPOINT ["java", "-jar", "app.jar"]
 EOF
 
-echo "${project_name} project and config files have been created and configured successfully."
+echo "${project_name_lower} project and config files have been created and configured successfully."
 
