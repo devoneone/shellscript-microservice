@@ -7,6 +7,11 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to convert hyphen-separated string to CamelCase
+to_camel_case() {
+    echo "$1" | sed -r 's/(^|-)([a-z])/\U\2/g'
+}
+
 # Check if Gradle is installed
 if ! command_exists gradle; then
     echo "Gradle is not installed. Please install Gradle before running this script."
@@ -16,8 +21,13 @@ fi
 # Prompt for project name and set a default if none is provided
 read -p "Enter the project name (default: config-service): " project_name
 project_name=${project_name:-config-service}  # Default to 'config-service' if no input is given
+
+# Convert project name to lowercase with hyphens for directories and application name
 project_name_lower=$(echo "$project_name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
-main_class="${project_name^}Application"  # Capitalize first letter for the main class name
+
+# Convert hyphen-separated project name to CamelCase for the main class
+project_name_camel=$(to_camel_case "$project_name")
+main_class="${project_name_camel}Application"  # CamelCase + Application suffix
 
 # Prompt for group (package structure)
 read -p "Enter the group (e.g., com.example or co.name): " group
@@ -90,6 +100,8 @@ EOF
 
     mkdir -p src/main/resources
     touch src/main/resources/application.yml
+    touch src/main/resources/application-dev.yml
+    touch src/main/resources/application-prod.yml
 
     cd ../..
 }
@@ -101,8 +113,19 @@ mkdir -p spring-micro-service
 create_project "${project_name_lower}" "${main_class}" "implementation 'org.springframework.cloud:spring-cloud-config-server'
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'"
 
-# Configure Config Server
+# Configure Config Server for the default profile (application.yml)
 cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application.yml
+spring:
+  application:
+    name: ${project_name_lower}
+  profiles:
+    active: dev
+server:
+  port: 8888
+EOF
+
+# Configure Config Server for the development profile (application-dev.yml)
+cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application-dev.yml
 server:
   port: 8888
 
@@ -115,17 +138,45 @@ spring:
     config:
       server:
         git:
-          uri: https://github.com/YourUsername/config-repo.git
+          uri: https://github.com/your_branch_git
           default-label: main
           clone-on-start: true
-      native:
-        search-paths:
-          - 'server-config/*service'
+        native:
+          search-paths:
+            - 'service-config/*service'
 
 eureka:
   client:
     serviceUrl:
       defaultZone: http://localhost:8761/eureka/
+EOF
+
+# Configure Config Server for the production profile (application-prod.yml)
+cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application-prod.yml
+server:
+  port: 8888
+
+spring:
+  application:
+    name: ${project_name_lower}
+  profiles:
+    active: git,native
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/your_branch_git
+          default-label: main
+          clone-on-start: true
+        native:
+          search-paths:
+            - 'service-config/*service'
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+
 EOF
 
 # Create Dockerfile for the Config Server project

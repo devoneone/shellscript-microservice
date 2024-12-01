@@ -7,17 +7,27 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to convert hyphenated string to CamelCase
+to_camel_case() {
+    echo "$1" | sed -r 's/(^|-)([a-z])/\U\2/g'
+}
+
 # Check if Gradle is installed
 if ! command_exists gradle; then
     echo "Gradle is not installed. Please install Gradle before running this script."
     exit 1
 fi
 
-# Prompt for project name and set default if none is provided
+# Prompt for project name and set a default if none is provided
 read -p "Enter the project name (default: default-service): " project_name
 project_name=${project_name:-default-service}  # Default to 'default-service' if no input is given
+
+# Convert project name to lowercase with hyphens for directories and application name
 project_name_lower=$(echo "$project_name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
-main_class="${project_name^}Application"  # Capitalize first letter for the main class name
+
+# Convert hyphenated project name to CamelCase for the main class
+project_name_camel=$(to_camel_case "$project_name")
+main_class="${project_name_camel}Application"  # CamelCase + Application suffix
 
 # Prompt for group (package structure)
 read -p "Enter the group (e.g., com.example or co.name): " group
@@ -27,7 +37,7 @@ package_path=$(echo "$group" | tr '.' '/')
 
 # Create project structure for API Gateway
 create_project() {
-    local project_name=$1
+    local project_name_lower=$1
     local main_class=$2
     local dependencies=$3
 
@@ -88,6 +98,8 @@ EOF
 
     mkdir -p src/main/resources
     touch src/main/resources/application.yml
+    touch src/main/resources/application-dev.yml
+    touch src/main/resources/application-prod.yml
 
     cd ../..
 }
@@ -100,11 +112,19 @@ create_project "${project_name_lower}" "${main_class}" "implementation 'org.spri
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
     implementation 'org.springframework.cloud:spring-cloud-starter-config'"
 
-# Configure API Gateway
+# Configure API Gateway for the default profile (application.yml)
 cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application.yml
+spring:
+  application:
+    name: ${project_name_lower}
+  profiles:
+    active: dev
 server:
   port: 8080
+EOF
 
+# Configure API Gateway for the development profile (application-dev.yml)
+cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application-dev.yml
 spring:
   application:
     name: ${project_name_lower}
@@ -121,6 +141,32 @@ eureka:
   client:
     serviceUrl:
       defaultZone: http://localhost:8761/eureka/
+      
+server:
+  port: 8080
+EOF
+
+# Configure API Gateway for the production profile (application-prod.yml)
+cat << EOF > spring-micro-service/${project_name_lower}/src/main/resources/application-prod.yml
+spring:
+  application:
+    name: ${project_name_lower}
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+  config:
+    import: optional:configserver:http://configserver:8888
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://eureka:8761/eureka/
+      
+server:
+  port: 8080
 EOF
 
 # Create Dockerfile for the API Gateway project

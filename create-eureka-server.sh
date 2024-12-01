@@ -7,6 +7,11 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to convert hyphenated string to CamelCase
+to_camel_case() {
+    echo "$1" | sed -r 's/(^|-)([a-z])/\U\2/g'
+}
+
 # Check if Gradle is installed
 if ! command_exists gradle; then
     echo "Gradle is not installed. Please install Gradle before running this script."
@@ -16,8 +21,13 @@ fi
 # Prompt for project name and set a default if none is provided
 read -p "Enter the project name (default: eureka-server): " project_name
 project_name=${project_name:-eureka-server}  # Default to 'eureka-server' if no input is given
+
+# Convert project name to lowercase with hyphens for directories and application name
 project_name_lower=$(echo "$project_name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
-main_class="${project_name^}Application"  # Capitalize first letter for the main class name
+
+# Convert hyphenated project name to CamelCase for the main class
+project_name_camel=$(to_camel_case "$project_name")
+main_class="${project_name_camel}Application"  # CamelCase + Application suffix
 
 # Prompt for group (package structure)
 read -p "Enter the group (e.g., com.example or co.name): " group
@@ -160,12 +170,6 @@ EXPOSE 8761
 # Run the Spring Boot application
 ENTRYPOINT ["java", "-jar", "app.jar"]
 EOF
-
-# Update main application class to include the @EnableEurekaServer annotation
-sed -i '/@SpringBootApplication/a\
-import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;\
-\
-@EnableEurekaServer' spring-micro-service/${project_name_lower}/src/main/java/${package_path}/${project_name_lower//-/}/${main_class}.java
 
 echo "Eureka Server project and Dockerfile have been created and configured successfully."
 
